@@ -5,13 +5,15 @@
 
 module Main where
 
-import Test.QuickCheck ( choose, frequency, generate, Gen )
+import Test.QuickCheck ( choose, frequency, generate, Gen, quickCheck )
 
-import Parser ( method, parseFile )
+import Parser ( method, parseFile, prop )
 import Testing ( satHoare )
 import Bandit
 import Data.List (intersperse, nub, sort)
 import Control.Monad (replicateM)
+import DepGraph
+import Text.Parsec (parse)
 
 {- For integers in the (-10,10) range, generate x,y, sat:
   0 <= x < y <= 5 -}
@@ -62,7 +64,7 @@ wp (x,y) = frequency [(x,return True),(y,return False)]
 
 main :: IO ()
 main = do
-  let n = 1000
+  {-let n = 1000
   vs <- generate $ take n <$> ucb1 Main.pred [bad,notGreat,baseline,conc1,conc2]
   let zs = nub $ sort $ map val $ filter valid vs
   print $ show $ length zs
@@ -71,6 +73,12 @@ main = do
   print $ show $ length $ nub $ sort ws
   print $ show $ length $ nub $ sort ks
   return ()
+  -}
   {-m <- parseFile method "gcd.ttt"
   quickCheck (satHoare m)
   -}
+  let x = parse Parser.prop "" "x <= y && u <= w"
+  let y = case x of Right z -> z
+  h <- generate $ genConcrOrder y
+  print h
+  return ()

@@ -12,7 +12,7 @@ data Val = VUnit | VInt Int | VBool Bool | VArray (Seq.Seq Val) deriving (Show,E
 litToVal :: Lit -> Val
 litToVal (LInt x) = VInt x
 litToVal (LBool x) = VBool x
-litToVal (LArray x) = VArray (Seq.fromList $ fmap litToVal x)
+-- litToVal (LArray x) = VArray (Seq.fromList $ fmap litToVal x)
 
 type Store = Map.Map Var Val
 
@@ -91,12 +91,13 @@ setIndex x i v = do
 -}
 runCmd :: Cmd -> Comp Val
 runCmd (Assign (LVar x) e) = evalExpr e >>= assignVar x >> return VUnit
-runCmd (Assign (LIndex x idx) e) = do
+{-runCmd (Assign (LIndex x idx) e) = do
   v <- evalExpr e
   vi <- evalExpr idx
   case vi of
     VInt i -> setIndex x i v >> return VUnit
     _ -> throwError (TypeErr "Got non-integer index.")
+-}
 runCmd (Seq cs) = foldM (const runCmd) VUnit cs
 runCmd (IfElse e c1 c2) = do
   v <- evalExpr e
@@ -123,38 +124,49 @@ call m vs = do
 
 {- Propositional semantics -}
 {-data NumExp = NumLitInt Int | NumExpPlus NumExp NumExp | NumExpMinus NumExp NumExp | NumExpTimes NumExp NumExp | NumExpDiv NumExp NumExp | NumExpMod NumExp NumExp-}
-evalNumExp :: NumExp -> Comp Int
+evalNumExp :: Integral a => NumExp -> Comp a
 evalNumExp (NEVar x) = do
   v <- lookupVar x
   case v of
-    VInt v -> return v
+    VInt v -> return $ fromInteger $ toInteger v
     _ -> throwError (TypeErr "Got non-numeric type while evaluating NumExp")
-evalNumExp (NEInt x) = return x
+evalNumExp (NEInt x) = return $ fromInteger $ toInteger x
 evalNumExp (NEBinOp b e1 e2) = evalNEBinOp b <$> evalNumExp e1 <*> evalNumExp e2
 evalNumExp (NEMonOp o e) = evalNEMonOp o <$> evalNumExp e
 
 evalProp :: Prop -> Comp Bool
-evalProp (PropVar x) = do
+{-evalProp (PropVar x) = do
   v <- lookupVar x
   case v of
     VBool b -> return b
     _ -> throwError (TypeErr "Got non-propositional variable")
+-}
 evalProp (RelExp r p1 p2) = evalPropRel r <$> evalNumExp p1 <*> evalNumExp p2
 evalProp (PBO op p1 p2) = evalPropBinOp op <$> evalProp p1 <*> evalProp p2
 evalProp (PMO op p) = evalPropMonOp op <$> evalProp p
 
 evalPropMonOp :: PropMonOp -> Bool -> Bool
-evalPropMonOp = error "not implemented"
+evalPropMonOp PNot = not
 
 evalPropBinOp :: PropBinOp -> Bool -> Bool -> Bool
-evalPropBinOp = error "not implemented"
+evalPropBinOp PAnd = (&&)
+evalPropBinOp POr = (||)
 
-evalPropRel :: PropRel -> Int -> Int -> Bool
-evalPropRel = error "not implemented"
+evalPropRel :: (Ord a, Eq a) => PropRel -> a -> a -> Bool
+evalPropRel RLeq = (<=)
+evalPropRel RGeq = (>=)
+evalPropRel RLt = (<)
+evalPropRel RGt = (>)
+evalPropRel REq = (==)
+evalPropRel RNeq = (/=)
 
 
-evalNEMonOp :: NumExpMonOp -> Int -> Int
-evalNEMonOp = error "not implemented"
+evalNEMonOp :: Num a => NumExpMonOp -> a -> a
+evalNEMonOp NENeg = ((-1)*)
 
-evalNEBinOp :: NumExpBinOp -> Int -> Int -> Int
-evalNEBinOp = error "not implemented"
+evalNEBinOp :: Num a => NumExpBinOp -> a -> a -> a
+evalNEBinOp NEPlus = (+)
+evalNEBinOp NEMinus = (-)
+evalNEBinOp NETimes = (*)
+{-evalNEBinOp NEDiv = div
+evalNEBinOp NEMod = mod-}

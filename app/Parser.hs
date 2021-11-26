@@ -83,21 +83,21 @@ boolLit = (reserved "true" >> return (LBool True)) <|> (reserved "false" >> retu
 intLit :: Parser Lit
 intLit = LInt . fromIntegral <$> integer
 
-arrayLit :: Parser Lit
-arrayLit = LArray <$> brackets (sepBy lit (optional whiteSpace >> char ','))
+-- arrayLit :: Parser Lit
+-- arrayLit = LArray <$> brackets (sepBy lit (optional whiteSpace >> char ','))
 
 unitLit = char '(' >> char ')' >> return LUnit
 
 lit :: Parser Lit
-lit = unitLit <|> intLit <|> boolLit <|> arrayLit
+lit = unitLit <|> intLit <|> boolLit {-<|> arrayLit-}
 
 lvalue :: Parser LVal
-lvalue = do
-  x <- identifier
-  idx <- optionMaybe (brackets expr)
-  return $ case idx of
-    Nothing -> LVar x
-    Just e -> LIndex x e
+lvalue = LVar <$> identifier
+
+  -- idx <- optionMaybe (brackets expr)
+  -- return $ case idx of
+    -- Nothing -> LVar x
+    -- Just e -> LIndex x e
 
 command :: Parser Cmd
 command = parens command <|> sequenceOfCmd
@@ -194,9 +194,10 @@ argList = argPair `sepBy1` (whiteSpace >> char ',' >> whiteSpace)
 numExpOps =
   [
     [ Prefix (reservedOp "-" >> return (NEMonOp NENeg))],
-    [ Infix (reservedOp "*" >> return (NEBinOp NETimes)) AssocLeft,
+    [ Infix (reservedOp "*" >> return (NEBinOp NETimes)) AssocLeft{-,
       Infix (reservedOp "%" >> return (NEBinOp NEMod)) AssocLeft,
       Infix (reservedOp "/" >> return (NEBinOp NEDiv)) AssocLeft
+      -}
     ],
     [ Infix (reservedOp "+" >> return (NEBinOp NEPlus)) AssocLeft,
       Infix (reservedOp "-" >> return (NEBinOp NEMinus)) AssocLeft
@@ -209,30 +210,43 @@ numExp' =
     <|> fmap NEVar identifier
     <|> fmap NEInt (fromInteger <$> integer)
 
-numExp :: Parser Expr
-numExp = buildExpressionParser ops expr'
+numExp :: Parser NumExp
+numExp = buildExpressionParser numExpOps numExp'
 
+propOps =
+  [
+    [ Prefix (reservedOp "!" >> return (PMO PNot)),
+      Infix (reservedOp "&&" >> return (PBO PAnd)) AssocLeft,
+      Infix (reservedOp "||" >> return (PBO POr)) AssocLeft
+    ]
+  ]
+
+propRel :: Parser PropRel
+propRel = (reservedOp "<=" >> return RLeq)
+        <|> (reservedOp ">=" >> return RGeq)
+        <|> (reservedOp "<" >> return RLt)
+        <|> (reservedOp ">" >> return RGt)
+        <|> (reservedOp "==" >> return REq)
+        <|> (reservedOp "!=" >> return RNeq)
+
+propRelExp :: Parser Prop
+propRelExp = do
+    e1 <- numExp
+    optional whiteSpace
+    r <- propRel
+    optional whiteSpace
+    RelExp r e1 <$> numExp
+
+
+prop' :: Parser Prop
+prop' = parens prop'
+    <|> propRelExp
+    {- This might parse wrong... If we see a var, we're automatically assuming that it's
+       a numerical var, and then trying a prop var if that fails...-}
+    {-<|> fmap PropVar identifier-}
 
 prop :: Parser Prop
-prop = _ {-BoolExpr <$> expr {- <|> (do-}
-  reserved "forall"
-  x <- identifier
-  reservedOp "::"
-  optional whiteSpace
-  char '('
-  optional whiteSpace
-  lb <- expr
-  optional whiteSpace
-  char ','
-  optional whiteSpace
-  ub <- expr
-  optional whiteSpace
-  char ')'
-  optional whiteSpace
-  char '.'
-  optional whiteSpace
-  Forall x (lb,ub) <$> prop)
-  -}
+prop = buildExpressionParser propOps prop'
 
 pre :: Parser (Prop,Bool)
 pre = reserved "requires" >> (,True) <$> prop

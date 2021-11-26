@@ -36,6 +36,9 @@ epGreedy eps p gens = go stats
           vs <- go stats'
           return $ res:vs
 
+-- regret of "take T (ucb1 p xs)" where |xs| = K
+-- is sqrt(KTlog(T))
+
 ucb1 :: (a -> Bool) -> [Gen a] -> Gen [Result a]
 ucb1 p gens = do
     totRewards <- Seq.fromList . map reward <$> sequence gens
