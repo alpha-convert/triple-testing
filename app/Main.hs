@@ -2,7 +2,7 @@
 
 module Main where
 
-import Test.QuickCheck ( choose, frequency, generate, Gen, quickCheck )
+import Test.QuickCheck ( choose, frequency, generate, Gen, quickCheck, listOf )
 
 import Parser ( method, parseFile, prop )
 import Testing
@@ -64,7 +64,7 @@ gen1 :: Gen (Maybe (Int,Int))
 gen1 = do
   y <- choose (0,2)
   x <- choose (1,y)
-  if y < 1 then return Nothing 
+  if y < 1 then return Nothing
   else return $ Just (x,y)
 
 gen2 :: Gen (Maybe (Int,Int))
@@ -92,8 +92,11 @@ main = do
   {-m <- parseFile method "gcd.ttt"
   quickCheck (satHoare m)
   -}
-  let x = parse Parser.prop "" "x*x2 + 2*x - 1 >= 0 && x == x2"
+  let x = parse Parser.prop "" "x <= y"
   let y = case x of Right z -> z
-  h <- generate $ makeGeneratorScripts 200 y
+  h <- generate $ makeGeneratorScripts 1 y
+  let gs = map GenScript.interpScript h
   print h
+  zs <- mapM generate gs
+  print zs
   return ()

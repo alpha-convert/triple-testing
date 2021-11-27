@@ -2,18 +2,26 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module GenScript (makeGeneratorScripts) where
+module GenScript (makeGeneratorScripts, interpScript) where
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import GHC.IO (unsafePerformIO)
 import Syntax
+    ( driveNegations,
+      freeNumVar,
+      NumExp(..),
+      NumExpBinOp(NEMinus),
+      Prop(..),
+      PropBinOp(POr, PAnd),
+      PropRel(RLt, REq, RNeq, RGeq, RLeq, RGt),
+      Var )
 import Test.QuickCheck ( elements, shuffle, Gen, choose )
 import Control.Monad ( replicateM )
 import Data.List (nub)
 import Control.Monad.State
-import Data.IntervalSet
-import Data.Interval
+import Data.IntervalSet hiding (null)
+import Data.Interval hiding (null)
 import qualified Semantics
 import Control.Monad.Random (Random)
 
@@ -76,7 +84,13 @@ instance Show Constraint where
   show (C c e) = show e ++ show c
 instance Show GSAction where
   show (Concretize x) = "!" ++ x
-  show (Constrain v c) = show c
+  show (Constrain v c) = "{" ++ v ++ "} " ++ show c
+
+varsMentioned :: GeneratorScript -> Set.Set Var
+varsMentioned [] = Set.empty
+varsMentioned (Concretize x:s) = Set.insert x (varsMentioned s)
+varsMentioned (Constrain x (C _ e) : s) = Set.insert x $ Set.union (Syntax.freeNumVar e) (varsMentioned s)
+
 
 {-
 To build GeneratorScripts:
@@ -165,14 +179,18 @@ data ScriptState = S {concrVars :: Map.Map Var Int, constrs :: Map.Map Var [Cons
 
 type Interp a = State ScriptState a
 
-getVar :: Var -> Interp Int
-getVar = error "not implemented"
+getConcrVar :: Var -> Interp Int
+getConcrVar x = do
+  st <- get
+  let cvs = concrVars st
+  case Map.lookup x cvs of
+    Just n -> return n
 
 partialEval :: Var -> NumExp -> Interp (Int -> Int)
 partialEval x = go
   where
     go (NEVar y) = if x == y then return id
-                   else const <$> getVar y
+                   else const <$> getConcrVar y
     go (NEInt n) = return $ const n
     go (NEBinOp b e1 e2) = do
       let r = Semantics.evalNEBinOp b
@@ -210,11 +228,47 @@ interpConstr x (C r e) =
 
 sampleIntSet :: (Random a,Ord a) => (a,a) -> IntervalSet a -> Gen (Maybe a)
 sampleIntSet (a,b) s =
-  if a <= b then return Nothing else
   let s' = Data.IntervalSet.intersection s (Data.IntervalSet.singleton $ Finite a <=..<= Finite b) in
   let ints = toList s' in
-  do
+  if null ints then return Nothing
+  else do
     i <- elements ints
     let Finite x = Data.Interval.lowerBound i
     let Finite y = Data.Interval.upperBound i
     Just <$> choose (x,y)
+
+interpConstrsFor :: Var -> Interp (IntervalSet Int)
+interpConstrsFor x = do
+  st <- get
+  let csMap = constrs st
+  let cs = case Map.lookup x csMap of Just u -> u
+  Data.IntervalSet.intersections <$> mapM (interpConstr x) cs
+
+{- I got lost in my monad stack so this is manual... -}
+interpScript' :: ScriptState -> GeneratorScript -> Gen (Maybe (Map.Map Var Int))
+interpScript' st [] = return (Just $ concrVars st)
+interpScript' st ((Concretize x):script) = do
+  let (s,st') = runState (interpConstrsFor x) st
+  vX <- sampleIntSet (-100,100) s
+  case vX of
+    Nothing -> return Nothing
+    Just n -> do
+      let cvs = concrVars st'
+      let cvs' = Map.insert x n cvs
+      let st'' = st' {concrVars = cvs'}
+      interpScript' st'' script
+interpScript' st ((Constrain x c):script) = do
+  let cMap = constrs st
+  let cMap' = Map.update (Just . (c:)) x cMap
+  let st' = st {constrs = cMap'}
+  interpScript' st' script
+
+initState :: [Var] -> ScriptState
+initState vars = S {concrVars = Map.empty, constrs= init}
+  where
+    init = foldr (`Map.insert` []) Map.empty vars
+
+interpScript :: GeneratorScript -> Gen (Maybe (Map.Map Var Int))
+interpScript scr =
+  let vars = Set.toList $ varsMentioned scr in
+  interpScript' (initState vars) scr
