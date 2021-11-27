@@ -28,13 +28,46 @@ data Method = Method {name :: String, args :: [(Var,Typ)], retTy :: Typ, retName
 
 
 {- Language of propositions -}
-data NumExpBinOp = NEPlus | NEMinus | NETimes {-| NEDiv | NEMod-} deriving (Show)
-data NumExpMonOp = NENeg deriving (Show)
-data NumExp = NEVar Var | NEInt Int | NEBinOp NumExpBinOp NumExp NumExp | NEMonOp NumExpMonOp NumExp deriving (Show)
-data PropRel = RGeq | RLeq | REq | RGt | RLt | RNeq deriving (Show)
-data PropBinOp = PAnd | POr deriving (Show)
-data PropMonOp = PNot deriving (Show)
-data Prop = PropVar Var | RelExp PropRel NumExp NumExp | PBO PropBinOp Prop Prop | PMO PropMonOp Prop deriving (Show)
+data NumExpBinOp = NEPlus | NEMinus | NETimes {-| NEDiv | NEMod-} deriving (Eq,Ord)
+instance Show NumExpBinOp where
+  show NEPlus = "+"
+  show NEMinus = "-"
+  show NETimes = "*"
+
+data NumExpMonOp = NENeg deriving (Eq,Ord)
+instance Show NumExpMonOp where
+  show NENeg = "-"
+
+data NumExp = NEVar Var | NEInt Int | NEBinOp NumExpBinOp NumExp NumExp | NEMonOp NumExpMonOp NumExp deriving (Eq,Ord)
+instance Show NumExp where
+  show (NEVar x) = x
+  show (NEInt n) = show n
+  show (NEBinOp b e1 e2) = "(" ++ show e1 ++ " " ++ show b ++ " " ++ show e2 ++ ")"
+  show (NEMonOp m e) = show m ++ show e
+
+data PropRel = RGeq | RLeq | REq | RGt | RLt | RNeq
+instance Show PropRel where
+  show RGeq = ">="
+  show RLeq = "<="
+  show REq = "=="
+  show RGt = ">"
+  show RLt = "<"
+  show RNeq = "!="
+
+data PropBinOp = PAnd | POr
+instance Show PropBinOp where
+  show PAnd = "&&"
+  show POr = "||"
+
+data PropMonOp = PNot
+instance Show PropMonOp where
+  show PNot = "!"
+
+data Prop = {-PropVar Var | -}RelExp PropRel NumExp NumExp | PBO PropBinOp Prop Prop | PMO PropMonOp Prop
+instance Show Prop where
+  show (RelExp r e1 e2) = show e1 ++ " " ++ show r ++ " " ++ show e2
+  show (PBO r p1 p2) = "(" ++ show p1 ++ " " ++ show r ++ " " ++ show p2 ++ ")"
+  show (PMO m p) = show m ++ "(" ++ show p ++ ")"
 
 freeNumVar :: NumExp -> Set.Set Var
 freeNumVar (NEVar x) = Set.singleton  x
@@ -51,14 +84,14 @@ notRel RLt = RGeq
 notRel RNeq = REq
 
 notProp :: Prop -> Prop
-notProp (PropVar x) = PMO PNot (PropVar x)
+{-notProp (PropVar x) = PMO PNot (PropVar x)-}
 notProp (RelExp r x y) = RelExp (notRel r) x y
 notProp (PBO PAnd x y) = PBO POr (notProp x) (notProp y)
 notProp (PBO POr x y) = PBO PAnd (notProp x) (notProp y)
 notProp (PMO PNot x) = driveNegations x
 
 driveNegations :: Prop -> Prop
-driveNegations (PropVar x) = PropVar x
+{-driveNegations (PropVar x) = PropVar x-}
 driveNegations (RelExp r e1 e2) = RelExp r e1 e2
 driveNegations (PBO r p1 p2) = PBO r (driveNegations p1) (driveNegations p2)
 driveNegations (PMO PNot p) = notProp p
