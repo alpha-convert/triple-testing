@@ -4,7 +4,6 @@ module Testing where
 
 import Test.QuickCheck.Gen
 import Test.QuickCheck
-import Control.Monad.Identity
 import qualified Data.Map as Map
 import qualified Data.Sequence as Seq
 import Syntax

@@ -2,15 +2,20 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module GenScript where
+module GenScript (makeGeneratorScripts) where
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import GHC.IO (unsafePerformIO)
 import Syntax
-import Test.QuickCheck
-import Control.Monad
+import Test.QuickCheck ( elements, shuffle, Gen, choose )
+import Control.Monad ( replicateM )
 import Data.List (nub)
+import Control.Monad.State
+import Data.IntervalSet
+import Data.Interval
+import qualified Semantics
+import Control.Monad.Random (Random)
 
 type DepGraph = Map.Map Var (Set.Set Var)
 
@@ -58,7 +63,8 @@ genConcrOrder p = let !g = depUGraph p in
 
 data ConstrTyp = EqZ | GeqZ | GtZ | NeqZ deriving (Eq,Ord)
 data Constraint = C ConstrTyp NumExp deriving (Eq,Ord)
-data GSAction = Concretize Var | Constrain Constraint deriving (Eq,Ord)
+data GSAction = Concretize Var | Constrain Var Constraint deriving (Eq,Ord)
+                               {- Variable which is being constrained -}
 type GeneratorScript = [GSAction]
 
 instance Show ConstrTyp where
@@ -70,7 +76,7 @@ instance Show Constraint where
   show (C c e) = show e ++ show c
 instance Show GSAction where
   show (Concretize x) = "!" ++ x
-  show (Constrain c) = show c
+  show (Constrain v c) = show c
 
 {-
 To build GeneratorScripts:
@@ -80,8 +86,6 @@ To build GeneratorScripts:
 4. Maximally front-load the script: for every x, include all of the constraints e
    including x which only mention concretized variables immediately before x.
 -}
-
-
 
 constraints :: Prop -> [Set.Set Constraint]
 constraints = go . driveNegations
@@ -113,17 +117,26 @@ concreteWRT vs w (C _ e) = go vs w e
     go vs w (NEBinOp _ e1 e2) = go vs w e1 && go vs w e2
     go vs w (NEMonOp _ e) = go vs w e
 
-singleVarConstr :: Constraint -> Bool
-singleVarConstr (C _ e) = Set.size (Syntax.freeNumVar e) == 1
+singleVarConstr :: Constraint -> Maybe Var
+singleVarConstr (C _ e) = if Set.size fvs == 1
+                          then Just (Set.findMax fvs)
+                          else Nothing
+  where fvs = Syntax.freeNumVar e
+
+filterMapFlip :: (a -> Maybe b) -> [a] -> [(b,a)]
+filterMapFlip f [] = []
+filterMapFlip f (x:xs) = case f x of
+                           Nothing -> filterMapFlip f xs
+                           Just y -> (y,x) : filterMapFlip f xs
 
 constructScript :: Set.Set Constraint -> [Var] -> GeneratorScript
-constructScript cs vs = let svcs = Set.filter singleVarConstr cs in
-  (Constrain <$> Set.toList svcs) ++ go (cs Set.\\ svcs) vs []
+constructScript cs vs = let svcs = filterMapFlip singleVarConstr (Set.toList cs) in
+  map (uncurry Constrain) svcs ++ go (cs Set.\\ Set.fromList (map snd svcs)) vs []
   where
     go cs [] concrd = []
     go cs (v:vs) concrd =
       let v_constrs = Set.filter (concreteWRT concrd v) cs in
-      fmap Constrain (Set.toList v_constrs) ++ Concretize v : go (cs Set.\\ v_constrs) vs (v:concrd)
+      fmap (Constrain v) (Set.toList v_constrs) ++ Concretize v : go (cs Set.\\ v_constrs) vs (v:concrd)
 
 
 {- Int parameter controls number of desired generators. We filter out
@@ -147,3 +160,61 @@ makeGeneratorScripts n p =
     constrSets <- replicateM n $ elements cs
     genScripts <- mapM (\cset -> fmap (constructScript cset) concrOrders) constrSets
     return $ nub genScripts
+
+data ScriptState = S {concrVars :: Map.Map Var Int, constrs :: Map.Map Var [Constraint]}
+
+type Interp a = State ScriptState a
+
+getVar :: Var -> Interp Int
+getVar = error "not implemented"
+
+partialEval :: Var -> NumExp -> Interp (Int -> Int)
+partialEval x = go
+  where
+    go (NEVar y) = if x == y then return id
+                   else const <$> getVar y
+    go (NEInt n) = return $ const n
+    go (NEBinOp b e1 e2) = do
+      let r = Semantics.evalNEBinOp b
+      f <- go e1
+      g <- go e2
+      return $ \v -> r (f v) (g v)
+    go (NEMonOp o e) = do
+      let r = Semantics.evalNEMonOp o
+      f <- go e
+      return $ \v -> r (f v)
+
+interpConstr :: Var -> Constraint -> Interp (IntervalSet Int)
+interpConstr x (C r e) =
+  do
+    f <- partialEval x e
+    {- f = ax+b ==> f(0) = b, f(1) = a + b-}
+    let b = f 0
+    let a = f 1 - b
+    let isConstant = a == 0
+    case r of
+      {- ax+b=0 <=> x = -b/a-}
+      EqZ -> if a == 0 && b == 0
+             then return Data.IntervalSet.whole
+             else if a == 0 || (b `mod` a) /= 0
+             then return Data.IntervalSet.empty
+             else return (Data.IntervalSet.singleton $ Data.Interval.singleton (-b `div` a))
+      {- ax+b >= 0 <=> x >= ceil(-b/a)-}
+      GeqZ -> if isConstant then (if b >= 0 then return Data.IntervalSet.whole else return Data.IntervalSet.empty)
+              else return $ Data.IntervalSet.singleton ((Finite $ -b `div` a) <=..< PosInf)
+      GtZ -> if isConstant then (if b > 0 then return Data.IntervalSet.whole else return Data.IntervalSet.empty)
+             else return $ Data.IntervalSet.singleton ((Finite $ -b `div` a) <..< PosInf)
+      {- ax+b != 0 <=> x != -b/a -}
+      NeqZ -> if isConstant then (if b /= 0 then return Data.IntervalSet.whole else return Data.IntervalSet.empty)
+              else return $ Data.IntervalSet.difference Data.IntervalSet.whole (Data.IntervalSet.singleton $ Data.Interval.singleton (-b `div` a))
+
+sampleIntSet :: (Random a,Ord a) => (a,a) -> IntervalSet a -> Gen (Maybe a)
+sampleIntSet (a,b) s =
+  if a <= b then return Nothing else
+  let s' = Data.IntervalSet.intersection s (Data.IntervalSet.singleton $ Finite a <=..<= Finite b) in
+  let ints = toList s' in
+  do
+    i <- elements ints
+    let Finite x = Data.Interval.lowerBound i
+    let Finite y = Data.Interval.upperBound i
+    Just <$> choose (x,y)

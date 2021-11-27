@@ -38,6 +38,7 @@ data NumExpMonOp = NENeg deriving (Eq,Ord)
 instance Show NumExpMonOp where
   show NENeg = "-"
 
+{- Multilinear expressions ONLY -}
 data NumExp = NEVar Var | NEInt Int | NEBinOp NumExpBinOp NumExp NumExp | NEMonOp NumExpMonOp NumExp deriving (Eq,Ord)
 instance Show NumExp where
   show (NEVar x) = x

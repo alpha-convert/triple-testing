@@ -1,7 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE NamedFieldPuns #-}
 
 module Main where
 
@@ -87,26 +84,16 @@ perfect2 = do
 
 main :: IO ()
 main = do
-  let n = 10000
+  {-let n = 100
   vs <- generate $ take n <$> ucb1 isJust [gen1,gen2,perfect2]
   let zs = map stats $ filter valid vs
   print zs
-  {-let n = 1000
-  vs <- generate $ take n <$> ucb1 Main.pred [bad,notGreat,baseline,conc1,conc2]
-  let zs = nub $ sort $ map val $ filter valid vs
-  print $ show $ length zs
-  ws <- filter Main.pred <$> replicateM n (generate conc1)
-  ks <- filter Main.pred <$> replicateM n (generate conc2)
-  print $ show $ length $ nub $ sort ws
-  print $ show $ length $ nub $ sort ks
-  return ()
   -}
   {-m <- parseFile method "gcd.ttt"
   quickCheck (satHoare m)
   -}
-  {-let x = parse Parser.prop "" "0 <= y && y <= 2 && 1 <= x && x <= y"
+  let x = parse Parser.prop "" "x*x2 + 2*x - 1 >= 0 && x == x2"
   let y = case x of Right z -> z
-  h <- generate $ makeGeneratorScripts 7 y
+  h <- generate $ makeGeneratorScripts 200 y
   print h
-  -}
   return ()
