@@ -24,6 +24,7 @@ import Data.IntervalSet hiding (null)
 import Data.Interval hiding (null)
 import qualified Semantics
 import Control.Monad.Random (Random)
+import qualified Debug.Trace as Debug
 
 type DepGraph = Map.Map Var (Set.Set Var)
 
@@ -206,12 +207,11 @@ interpConstr :: Var -> Constraint -> Interp (IntervalSet Int)
 interpConstr x (C r e) =
   do
     f <- partialEval x e
-    {- f = ax+b ==> f(0) = b, f(1) = a + b-}
     let b = f 0
     let a = f 1 - b
+    -- let !_ = Debug.trace ("While interpreting constraint " ++ (show (C r e)) ++ ", Got " ++ show e ++ " == " ++ show a ++ "*" ++ show x ++ "+" ++ show b) ()
     let isConstant = a == 0
     case r of
-      {- ax+b=0 <=> x = -b/a-}
       EqZ -> if a == 0 && b == 0
              then return Data.IntervalSet.whole
              else if a == 0 || (b `mod` a) /= 0
@@ -219,9 +219,17 @@ interpConstr x (C r e) =
              else return (Data.IntervalSet.singleton $ Data.Interval.singleton (-b `div` a))
       {- ax+b >= 0 <=> x >= ceil(-b/a)-}
       GeqZ -> if isConstant then (if b >= 0 then return Data.IntervalSet.whole else return Data.IntervalSet.empty)
-              else return $ Data.IntervalSet.singleton ((Finite $ -b `div` a) <=..< PosInf)
+              else 
+                if a > 0 then
+                  return $ Data.IntervalSet.singleton ((Finite $ -b `div` a) <=..< PosInf)
+                else
+                  return $ Data.IntervalSet.singleton (NegInf <..<= (Finite $ -b `div` a))
       GtZ -> if isConstant then (if b > 0 then return Data.IntervalSet.whole else return Data.IntervalSet.empty)
-             else return $ Data.IntervalSet.singleton ((Finite $ -b `div` a) <..< PosInf)
+             else 
+               if a > 0 then
+                 return $ Data.IntervalSet.singleton ((Finite $ -b `div` a) <..< PosInf)
+               else
+                 return $ Data.IntervalSet.singleton (NegInf <..< (Finite $ -b `div` a))
       {- ax+b != 0 <=> x != -b/a -}
       NeqZ -> if isConstant then (if b /= 0 then return Data.IntervalSet.whole else return Data.IntervalSet.empty)
               else return $ Data.IntervalSet.difference Data.IntervalSet.whole (Data.IntervalSet.singleton $ Data.Interval.singleton (-b `div` a))
@@ -249,10 +257,13 @@ interpScript' :: ScriptState -> GeneratorScript -> Gen (Maybe (Map.Map Var Int))
 interpScript' st [] = return (Just $ concrVars st)
 interpScript' st ((Concretize x):script) = do
   let (s,st') = runState (interpConstrsFor x) st
+  let cs = Map.lookup x (constrs st)
+  -- let !_ = Debug.trace ("Concretizing variable " ++ x ++ " under constraint set" ++ (show s) ++ "\n" ++ "Derived from constraints: " ++ (show cs)) ()
   vX <- sampleIntSet (-100,100) s
   case vX of
     Nothing -> return Nothing
     Just n -> do
+      -- let !_ = Debug.trace ("Variable " ++ x ++ " concretized to value " ++ show n) ()
       let cvs = concrVars st'
       let cvs' = Map.insert x n cvs
       let st'' = st' {concrVars = cvs'}

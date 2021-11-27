@@ -84,19 +84,15 @@ perfect2 = do
 
 main :: IO ()
 main = do
-  {-let n = 100
-  vs <- generate $ take n <$> ucb1 isJust [gen1,gen2,perfect2]
+  let n = 100
+  let x = parse Parser.prop "" "x <= y && y <= z"
+  let y = case x of Right z -> z
+  h <- generate $ makeGeneratorScripts 100 y
+  let gs = map GenScript.interpScript h
+  vs <- generate $ take n <$> ucb1 isJust gs
   let zs = map stats $ filter valid vs
   print zs
-  -}
   {-m <- parseFile method "gcd.ttt"
   quickCheck (satHoare m)
   -}
-  let x = parse Parser.prop "" "x <= y"
-  let y = case x of Right z -> z
-  h <- generate $ makeGeneratorScripts 1 y
-  let gs = map GenScript.interpScript h
-  print h
-  zs <- mapM generate gs
-  print zs
   return ()
