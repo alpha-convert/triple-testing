@@ -119,7 +119,7 @@ constraints = go . driveNegations
       cs1 <- go p1
       cs2 <- go p2
       [cs1,cs2]
-    go _ = fail "impossible"
+    go _ = [Set.empty]
     minus = NEBinOp NEMinus
 
 

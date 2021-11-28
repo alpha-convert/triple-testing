@@ -85,8 +85,6 @@ perfect2 = do
   x <- choose (y,2)
   return $ Just (x,y)
 
-
-
 main :: IO ()
 main = do
   let n = 100
@@ -94,7 +92,7 @@ main = do
   -- let x = parse Parser.prop "" "x <= y" 
   -- let x = parse Parser.prop "" "0 <= x && 0 <= y && x <= 2 && y <= 2 && x * y == 2"
   -- let x = parse Parser.prop "" "0 <= x && 0 <= y && x + y <= 100"
-  let y = case x of Right z -> z
+  {-let y = case x of Right z -> z
   h <- generate $ makeGeneratorScripts 100 y
   print h
   let gs = map GenScript.interpScript h
@@ -104,7 +102,7 @@ main = do
   let uniqs = nub $ map val zs
   print ("#unique:" ++ show (length uniqs))
   print ("Stats:" ++ (show $ toList $ stats $ last zs))
-  {-m <- parseFile method "gcd.ttt"
-  quickCheck (satHoare m)
   -}
+  m <- parseFile method "interesting.ttt"
+  satHoare 1000 m
   return ()

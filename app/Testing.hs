@@ -15,7 +15,8 @@ import qualified Data.Set as Set
 import GenScript
 import GHC.IO (unsafePerformIO)
 import Bandit (ucb1, Result (val))
-import Data.Maybe (isJust, fromJust, catMaybes)
+import Data.Maybe (isJust, fromJust, catMaybes, mapMaybe)
+import Data.List (nub, sort)
 
 
 satProp :: Store -> Prop -> Bool
@@ -29,12 +30,23 @@ satHoare :: Int -> Method -> IO ()
 satHoare n m = do
   let numVars = length (args m)
   let numScripts :: Int = numVars * numVars
-  gScripts <- generate $ makeGeneratorScripts numScripts (foldr (PBO PAnd) (PropConst True) (pres m))
-  let gs = map GenScript.interpScript gScripts
+  !gScripts <- generate $ makeGeneratorScripts numScripts (foldr (PBO PAnd) (PropConst True) (pres m))
+  putStrLn ("Found " ++ (show $ length gScripts) ++ " generator scripts while searching for " ++ show numScripts)
+  let !gs = map GenScript.interpScript gScripts
   let bandit = map val <$> ucb1 isJust gs
-  cases <- Data.Maybe.catMaybes . take n <$> generate bandit
+  putStrLn ("Generating " ++ show n ++ " inputs")
+  !cases <- Data.Maybe.catMaybes . take n <$> generate bandit
   let numDiscarded = n - length cases
-  let results = map (\sto -> (exampleSat m,sto)) cases
+  putStrLn ("Discarded: " ++ show numDiscarded)
+  putStrLn ("Unique: " ++ show (length $ nub cases))
+  let results = map (\sto -> (exampleSat m sto,sto)) cases
+  let failures = mapMaybe (\(r,sto) -> if not r then Just sto else Nothing) results
+  if not (null failures) then
+    do
+      putStrLn "Failed!"
+      putStrLn $ "Counterexample: " ++ show (head failures)
+  else
+    putStrLn "All tests passed."
   return ()
 
 exampleSat :: Method -> Store -> Bool
