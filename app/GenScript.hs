@@ -25,6 +25,7 @@ import Data.Interval hiding (null)
 import qualified Semantics
 import Control.Monad.Random (Random)
 import qualified Debug.Trace as Debug
+import Data.Maybe (fromJust)
 
 type DepGraph = Map.Map Var (Set.Set Var)
 
@@ -37,6 +38,7 @@ diagGraph s = Set.fold (\v g -> Map.insert v (Set.delete v s) g) Map.empty s
 
 depUGraph :: Prop -> DepGraph
 {-depUGraph (PropVar _) = Map.empty-}
+depUGraph (PropConst _) = Map.empty
 depUGraph (RelExp _ e1 e2) = diagGraph (Set.union (freeNumVar e1) (freeNumVar e2))
 depUGraph (PBO _ p1 p2) = unionGraph (depUGraph p1) (depUGraph p2)
 depUGraph (PMO _ p) = depUGraph p
@@ -184,8 +186,7 @@ getConcrVar :: Var -> Interp Int
 getConcrVar x = do
   st <- get
   let cvs = concrVars st
-  case Map.lookup x cvs of
-    Just n -> return n
+  return $ fromJust $ Map.lookup x cvs
 
 partialEval :: Var -> NumExp -> Interp (Int -> Int)
 partialEval x = go
@@ -211,6 +212,7 @@ interpConstr x (C r e) =
     let a = f 1 - b
     -- let !_ = Debug.trace ("While interpreting constraint " ++ (show (C r e)) ++ ", Got " ++ show e ++ " == " ++ show a ++ "*" ++ show x ++ "+" ++ show b) ()
     let isConstant = a == 0
+    let root = -fromIntegral b / (fromIntegral a)
     case r of
       EqZ -> if a == 0 && b == 0
              then return Data.IntervalSet.whole
@@ -219,17 +221,17 @@ interpConstr x (C r e) =
              else return (Data.IntervalSet.singleton $ Data.Interval.singleton (-b `div` a))
       {- ax+b >= 0 <=> x >= ceil(-b/a)-}
       GeqZ -> if isConstant then (if b >= 0 then return Data.IntervalSet.whole else return Data.IntervalSet.empty)
-              else 
+              else
                 if a > 0 then
-                  return $ Data.IntervalSet.singleton ((Finite $ -b `div` a) <=..< PosInf)
+                  return $ Data.IntervalSet.singleton ((Finite $ ceiling root) <=..< PosInf)
                 else
-                  return $ Data.IntervalSet.singleton (NegInf <..<= (Finite $ -b `div` a))
+                  return $ Data.IntervalSet.singleton (NegInf <..<= (Finite $ floor root))
       GtZ -> if isConstant then (if b > 0 then return Data.IntervalSet.whole else return Data.IntervalSet.empty)
-             else 
+             else
                if a > 0 then
-                 return $ Data.IntervalSet.singleton ((Finite $ -b `div` a) <..< PosInf)
+                 return $ Data.IntervalSet.singleton ((Finite $ ceiling root) <..< PosInf)
                else
-                 return $ Data.IntervalSet.singleton (NegInf <..< (Finite $ -b `div` a))
+                 return $ Data.IntervalSet.singleton (NegInf <..< (Finite $ floor root))
       {- ax+b != 0 <=> x != -b/a -}
       NeqZ -> if isConstant then (if b /= 0 then return Data.IntervalSet.whole else return Data.IntervalSet.empty)
               else return $ Data.IntervalSet.difference Data.IntervalSet.whole (Data.IntervalSet.singleton $ Data.Interval.singleton (-b `div` a))
@@ -249,7 +251,7 @@ interpConstrsFor :: Var -> Interp (IntervalSet Int)
 interpConstrsFor x = do
   st <- get
   let csMap = constrs st
-  let cs = case Map.lookup x csMap of Just u -> u
+  let cs = fromJust $ Map.lookup x csMap
   Data.IntervalSet.intersections <$> mapM (interpConstr x) cs
 
 {- I got lost in my monad stack so this is manual... -}
@@ -279,7 +281,9 @@ initState vars = S {concrVars = Map.empty, constrs= init}
   where
     init = foldr (`Map.insert` []) Map.empty vars
 
-interpScript :: GeneratorScript -> Gen (Maybe (Map.Map Var Int))
+interpScript :: GeneratorScript -> Gen (Maybe Semantics.Store)
 interpScript scr =
   let vars = Set.toList $ varsMentioned scr in
-  interpScript' (initState vars) scr
+    do
+      mp <- interpScript' (initState vars) scr
+      return $ Map.map Semantics.VInt <$> mp

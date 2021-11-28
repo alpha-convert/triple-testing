@@ -7,9 +7,10 @@ import Control.Monad.Except
 import Control.Monad.State.Lazy
 import Control.Monad.Identity
 
-data Val = VUnit | VInt Int | VBool Bool | VArray (Seq.Seq Val) deriving (Show,Eq)
+data Val = VUnit | VInt Int | VBool Bool {-| VArray (Seq.Seq Val)-} deriving (Show,Eq)
 
 litToVal :: Lit -> Val
+litToVal LUnit = VUnit
 litToVal (LInt x) = VInt x
 litToVal (LBool x) = VBool x
 -- litToVal (LArray x) = VArray (Seq.fromList $ fmap litToVal x)
@@ -45,14 +46,14 @@ evalBinOp BEq (VInt x) (VInt y) = VBool (x == y)
 evalBinOp BNeq (VInt x) (VInt y) = VBool (x /= y)
 evalBinOp BGt (VInt x) (VInt y) = VBool (x > y)
 evalBinOp BLt (VInt x) (VInt y) = VBool (x < y)
-evalBinOp BIndex (VArray xs) (VInt x) = xs `Seq.index` x
+-- evalBinOp BIndex (VArray xs) (VInt x) = xs `Seq.index` x
 evalBinOp _ _ _ = undefined
 
 {-data MonOp = MNeg | MNot deriving (Show)-}
 evalMonOp :: MonOp -> Val -> Val
 evalMonOp MNeg (VInt x) = VInt (- x)
 evalMonOp MNot (VBool b) = VBool (not b)
-evalMonOp MLength (VArray xs) = VInt (Seq.length xs)
+-- evalMonOp MLength (VArray xs) = VInt (Seq.length xs)
 evalMonOp _ _ = undefined
 
 {-data Expr = EVar Var | ELit Lit | EBinOp BinOp Expr Expr | EMonOp MonOp Expr deriving (Show)-}
@@ -67,6 +68,7 @@ assignVar x v = do
   sto <- get
   put $ Map.insert x v sto
 
+{-
 setIndex :: Var -> Int -> Val -> Comp ()
 setIndex x i v = do
   sto <- get
@@ -80,15 +82,8 @@ setIndex x i v = do
       put sto'
     Just _ -> throwError (TypeErr "Got non-array value to index into")
     Nothing -> throwError (Fail ("Unbound variable " ++ x))
-
-{-data Cmd
-  = Assign LVal Expr
-  | Seq [Cmd]
-  | IfElse Expr Cmd Cmd
-  | While Expr Cmd
-  | Skip
-  deriving (Show)
 -}
+
 runCmd :: Cmd -> Comp Val
 runCmd (Assign (LVar x) e) = evalExpr e >>= assignVar x >> return VUnit
 {-runCmd (Assign (LIndex x idx) e) = do
@@ -144,6 +139,7 @@ evalProp :: Prop -> Comp Bool
 evalProp (RelExp r p1 p2) = evalPropRel r <$> evalNumExp p1 <*> evalNumExp p2
 evalProp (PBO op p1 p2) = evalPropBinOp op <$> evalProp p1 <*> evalProp p2
 evalProp (PMO op p) = evalPropMonOp op <$> evalProp p
+evalProp (PropConst b) = return b
 
 evalPropMonOp :: PropMonOp -> Bool -> Bool
 evalPropMonOp PNot = not

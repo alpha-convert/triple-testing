@@ -144,8 +144,8 @@ returnCmd = reserved "return" >> Return <$> expr
 
 ops =
   [ [ Prefix (reservedOp "-" >> return (EMonOp MNeg)),
-      Postfix (reservedOp ".len" >> return (EMonOp MNeg)),
-      Infix (reservedOp "!!" >> return (EBinOp BIndex)) AssocLeft
+      Postfix (reservedOp ".len" >> return (EMonOp MNeg))
+      -- Infix (reservedOp "!!" >> return (EBinOp BIndex)) AssocLeft
     ],
     [ Infix (reservedOp "*" >> return (EBinOp BTimes)) AssocLeft,
       Infix (reservedOp "%" >> return (EBinOp BMod)) AssocLeft,
@@ -177,10 +177,10 @@ expr :: Parser Expr
 expr = buildExpressionParser ops expr'
 
 typ :: Parser Typ
-typ = (reserved "int" >> return TyInt) <|>
-      (reserved "bool" >> return TyBool) <|>
-      (reserved "unit" >> return TyUnit) <|>
-      (reserved "array" >> TyArr <$> parens typ)
+typ = (reserved "int" >> return TyInt)
+      -- (reserved "bool" >> return TyBool) <|>
+      -- (reserved "unit" >> return TyUnit)
+      -- (reserved "array" >> TyArr <$> parens typ)
 
 argList :: Parser [(Var,Typ)]
 argList = argPair `sepBy1` (whiteSpace >> char ',' >> whiteSpace)

@@ -5,7 +5,7 @@ type Var = String
 
 data Lit = LUnit | LInt Int | LBool Bool {-| LArray [Lit]-} deriving (Show)
 
-data BinOp = BPlus | BMinus | BTimes | BDiv | BMod | BAnd | BOr | BGeq | BLeq | BNeq | BEq | BGt | BLt | BIndex deriving (Show)
+data BinOp = BPlus | BMinus | BTimes | BDiv | BMod | BAnd | BOr | BGeq | BLeq | BNeq | BEq | BGt | BLt {-| BIndex-} deriving (Show)
 
 data MonOp = MNeg | MNot | MLength deriving (Show)
 
@@ -23,7 +23,7 @@ data Cmd
   | Return Expr
   deriving (Show)
 
-data Typ = TyUnit | TyInt | TyBool | TyArr Typ
+data Typ = TyUnit | TyInt | TyBool {-| TyArr Typ-}
 data Method = Method {name :: String, args :: [(Var,Typ)], retTy :: Typ, retName :: Var, body :: Cmd, pres :: [Prop], posts :: [Prop]}
 
 
@@ -64,8 +64,9 @@ data PropMonOp = PNot
 instance Show PropMonOp where
   show PNot = "!"
 
-data Prop = {-PropVar Var | -}RelExp PropRel NumExp NumExp | PBO PropBinOp Prop Prop | PMO PropMonOp Prop
+data Prop = {-PropVar Var | -}PropConst Bool | RelExp PropRel NumExp NumExp | PBO PropBinOp Prop Prop | PMO PropMonOp Prop
 instance Show Prop where
+  show (PropConst b) = show b
   show (RelExp r e1 e2) = show e1 ++ " " ++ show r ++ " " ++ show e2
   show (PBO r p1 p2) = "(" ++ show p1 ++ " " ++ show r ++ " " ++ show p2 ++ ")"
   show (PMO m p) = show m ++ "(" ++ show p ++ ")"
@@ -90,9 +91,11 @@ notProp (RelExp r x y) = RelExp (notRel r) x y
 notProp (PBO PAnd x y) = PBO POr (notProp x) (notProp y)
 notProp (PBO POr x y) = PBO PAnd (notProp x) (notProp y)
 notProp (PMO PNot x) = driveNegations x
+notProp (PropConst b) = PropConst (not b)
 
 driveNegations :: Prop -> Prop
 {-driveNegations (PropVar x) = PropVar x-}
 driveNegations (RelExp r e1 e2) = RelExp r e1 e2
 driveNegations (PBO r p1 p2) = PBO r (driveNegations p1) (driveNegations p2)
 driveNegations (PMO PNot p) = notProp p
+driveNegations (PropConst b) = PropConst b

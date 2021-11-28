@@ -4,14 +4,19 @@ module Main where
 
 import Test.QuickCheck ( choose, frequency, generate, Gen, quickCheck, listOf )
 
+import qualified Data.Sequence as Seq
 import Parser ( method, parseFile, prop )
 import Testing
 import Bandit
 import Data.List (intersperse, nub, sort)
 import Control.Monad (replicateM)
-import GenScript
+import GenScript ( makeGeneratorScripts, interpScript )
 import Text.Parsec (parse)
 import Data.Maybe (isJust)
+import Data.Foldable (toList)
+
+import Data.IntervalSet hiding (null,toList)
+import Data.Interval hiding (null)
 
 {- For integers in the (-10,10) range, generate x,y, sat:
   0 <= x < y <= 5 -}
@@ -85,13 +90,20 @@ perfect2 = do
 main :: IO ()
 main = do
   let n = 100
-  let x = parse Parser.prop "" "x <= y && y <= z"
+  let x = parse Parser.prop "" "0 <= y && x <= 100 && 50 <= x && x <= y"
+  -- let x = parse Parser.prop "" "x <= y" 
+  -- let x = parse Parser.prop "" "0 <= x && 0 <= y && x <= 2 && y <= 2 && x * y == 2"
+  -- let x = parse Parser.prop "" "0 <= x && 0 <= y && x + y <= 100"
   let y = case x of Right z -> z
   h <- generate $ makeGeneratorScripts 100 y
+  print h
   let gs = map GenScript.interpScript h
   vs <- generate $ take n <$> ucb1 isJust gs
-  let zs = map stats $ filter valid vs
-  print zs
+  let zs = filter valid vs
+  print (map val zs)
+  let uniqs = nub $ map val zs
+  print ("#unique:" ++ show (length uniqs))
+  print ("Stats:" ++ (show $ toList $ stats $ last zs))
   {-m <- parseFile method "gcd.ttt"
   quickCheck (satHoare m)
   -}
