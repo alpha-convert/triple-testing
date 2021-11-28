@@ -1,0 +1,99 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{fourier}
+\usepackage{hyperref}
+\usepackage[left=2cm,right=2cm,top=2cm,bottom=2cm]{geometry}
+
+\def\sectionautorefname{Section}
+
+
+\title{Learning Good Generators for Property-Based Testing in Deductive Program Verifiers}
+\author{Joseph Cutler}
+\begin{document}
+\maketitle
+
+\section{Motivation}
+Deductive Program Verifiers like Dafny and Frama-C have proven themselves both useful and powerful tools in the fight against un-verified software.
+However, their adoption is hindered by the fact that graduate-level expertise in verification is required in order to verify any non-trivial program. One approach to lowering the barrier to entry for deductive verifiers is to incorporate lighter-weight formal methods into the mix. While SMT based verification is very powerful, its nuances lead to much of the difficulty in using verifiers based on it, and so selectively substituting this verification technique with a less precise but easier-to-use formal method would lower the difficulty while retaining the same workflow and some of the theoretical guarantees.
+
+In this report, we investigate the use of \textit{Property-Based Testing} in place of SMT solving as a core for program verification tools. Property-Based Testing (PBT) is a lightweight formal method wherein the specifications for a program are checked by randomly generating thousands of inputs, and ensuring that the program meets its specification by executing it at those inputs. While PBT doesn't give full correctness guarantees like SMT solving does, it brings a level of confidence in a manner similar to Model Checking. Moreover, PBT is fully modular, and so it can be used selectively: randomly-tested code and SMT-verified code can coexist in the same file, enabling users to take a \textit{gradual verification} approach by gradually replacing tested code with verified code.
+
+Further, PBT has significant usability benefits over SMT-based verification. A common complaint while using SMT-based verifiers is that it is often difficult to interpret the SMT output. When an SMT solver fails to verify a specification, it can be for one of two reasons: either (a) the specification is incorrect, or (b) the solver was simply unable to find a proof. These two results are often indistinguishable, as the solver may not return a counter-model indicating that the specification is falsifiable --- in this case, the only course of action is to attempt to provide more hints to the solver in the hopes that it will eventually prove the property. With PBT, the only failure mode is through counter-examples, and so no interpretation is required. Moreover, the counter-examples in a PBT approach are more easily interpretable. With SMT, counter-examples are encoded in an SMT data format and are not easily lifted back to program values. With testing, the inputs were concrete to begin with, and so counter-examples can be presented as-is. Finally, PBT can actually aid in the development of SMT-verified programs by allowing the user to test specifications to gain confidence that they are true before spending costly time attempting to develop tricky loop invariants.
+
+In this report, we develop a simple deductive program verifier based on Dafny which is backed by PBT instead of SMT. In \autoref{sec:pbt}, we show how PBT can be used in place of an SMT solver to do deductive verification. This process is conceptually simple, but we will see that it hides a major challenge: generating thousands of independent random input sets which satisfy a function's precondition is NP-hard. In fact, tackling a small variant of problem is the bulk of the content of this report, and its main technical contribution. In brief, we present an algorithm which first infers a set of ``candidate" example-generators from the precondition in question, and then uses a reinforcement-learning-based online learning algorithm to find the best generator among the set.
+
+In \autoref{sec:luck}, we introduce a subset of a domain-specific language called \texttt{Luck} \cite{}, whose programs are generators. We discuss the semantics of these generators, and show why it is difficult to automatically read off a good generator from a precondition.
+
+In \autoref{sec:sci}, we present our algorithm for inferring candidate generators for a precondition. In \autoref{sec:bandits}, we discuss the online learning technique we employ to discover the best generator among our candidates. Finally, in \autoref{sec:impl}, we discuss our implementation of this algorithm, and present benchmarks.
+
+%In this report, I show how present a research direction (and preliminary results) which aims to lower the barrier to entry for using verifiers like Dafny.
+
+%At present, there is a great deal of active research into ways to lower the barrier to entry for using verifiers like Dafny. In this report, I present
+
+\section{PBT and the Generator Problem}
+\label{sec:pbt}
+At the core of all deductive program verifiers is a decision procedure for Hoare triples $\{\phi\}\, C \, \{\psi\}$. Such a triple is valid when for all heaps $\sigma$ satisfying $\phi$, we have that $\psi$ holds of the heap which results after $C$ is run on $\sigma$. In symbols:
+
+\[
+\forall \sigma. \phi(\sigma) \implies \psi(C(\sigma)) \tag{$\ast$}
+\]
+
+With traditional SMT-based verifiers, this is decided by compting the weakest precondition of $\psi$ with respect to $C$, $\texttt{wp}(C,\psi)$ and using SMT to prove that $\phi$ implies it. With property-based random testing, we can skip the weakest precondition computation and directly test ($\ast$). PBT tests formulae like $\forall x. P(x)$ by randomly generating values $a$ (of a specified type), and then evaluating the concrete boolean expression $P(a)$. When the property $P$ is an implication $Q \implies R$, as is the case for ($\ast$), this is not very effective. Intuitively, we'd like to test that $R$ holds for a bunch of examples satisfying $Q$, but what actually ends up happening is that the vast majority of our random examples satisfy $Q \implies R$ simply because they don't satisfy $Q(x)$. To fix this, PBT relies on \textit{user-written} generators which generate values \textit{satisfying $Q$}, and then checking that $R$ holds.
+
+In terms of ($\ast$), this means that a user of a verifier backed by PBT would have to provide programs which generate random heaps $\sigma$ to satisfy the preconditions of every function they plan to test. This is extremely labor-intensive, error prone, and essentially erases the benefits of PBT over SMT-based verification. To make the former practical, we need to \textit{automatically} create generators from the ``source code" of a specification. Unfortunately, this problem is NP-Hard in even simple cases. If we limit ourselves to preconditions $\phi$ which consist only of arithmetic constraints (which we will in fact do), the problem of generating hundreds of sets of inputs which satisfy $\phi$ is as hard as generating \textit{one} set of inputs, which is equivalent to SMT solving.
+
+\section{Luck and Generator Scripts}
+\label{sec:luck}
+
+\section{Script Candidate Inference}
+\label{sec:sci}
+
+\section{Generator Learning with Bandits Algorithms}
+\label{sec:bandits}
+
+\section{Implementation and Results}
+\label{sec:impl}
+
+%Intro
+ %Counterexample generation sucks
+ %Loop invariants suck
+ %Mixed/Gradual verification.
+ 
+ %Hard part is generators
+ %In this report we prresent an algorithm for inferring generators for numerical constraints
+  %Class of constraints is very practical and is useful for most dafny applications
+ %Although the idea came from deductive verification, it works for a broader class, too.
+ %Our approach is to infer a bunch of candidate generators, and then use an online reinforcement learnring algorithm to discover the best one as we generate examples
+%PBT and the generator problem
+ %PBT is.. (QC et cetera)
+ %Have to write generators
+ %Would like automatic generators
+   %Given a prop, generate thousands of random sat. assignments.
+   %Arbitrarily hard
+ %SMT Generation?
+%Luck and generator scripts
+ %Want to take props and turn them into 
+ %Luck is a language for mixed declarative/generative props.
+ %Core of our algorithm is to translate props into (inspired-by) Luck programs: we will generate a bunch of
+ %Explain concretization semantics (narrowing)
+%Script Inference
+ %Lots of possible luck programs for the same prop
+  % For a fixed concretization order, there is a unqiue "best" luck pgm.
+  % There are WAY too many concretization orders
+ %Approach: generate a bunch of potentially good candidates, then learn which one is the best via bandits
+ %Want a small nuber of candidates for `good` concretization orders, since performance of learrning degrades with number of candidates (and there are n! concr orders)
+ %Algorithm for random candidates: bulid a graph G out of "ocurrence relation", randomly DFS, visit times give a concr order. 
+  %This defines a distributioin over concrertization orders.
+  %This mods out by unnecessary orders: example $x <= y && u <= v$, there are only 8 concr orders from the DFS, not 4! = 24.
+  %We have found that sampling n^2 times from the concretization order distr from a prop with n variables works well in practiice, gives good theoretical bounds.
+   %We usually get far fewer than n!.
+%Bandits
+ % Bandits setup & problem statement
+ % UCB4 in terms of generators
+ % Regret bound lemma, theorem specialized to our setting.
+%Empirical results
+\end{document}
