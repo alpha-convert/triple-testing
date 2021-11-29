@@ -269,7 +269,7 @@ interpScript' st ((Concretize x):script) = do
   let (s,st') = runState (interpConstrsFor x) st
   let cs = Map.lookup x (constrs st)
   -- let !_ = Debug.trace ("Concretizing variable " ++ x ++ " under constraint set" ++ (show s) ++ "\n" ++ "Derived from constraints: " ++ (show cs)) ()
-  vX <- sampleIntSet (-100,100) s
+  vX <- sampleIntSet (-10000,100000) s
   case vX of
     Nothing -> return Nothing
     Just n -> do

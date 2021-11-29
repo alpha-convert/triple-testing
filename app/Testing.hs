@@ -2,6 +2,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE TupleSections #-}
 module Testing where
+import System.TimeIt
 
 import Test.QuickCheck.Gen
 import qualified Data.Map as Map
@@ -30,13 +31,12 @@ satHoare :: Int -> Method -> IO ()
 satHoare n m = do
   let numVars = length (args m)
   let numScripts :: Int = numVars * numVars
-  !gScripts <- generate $ makeGeneratorScripts numScripts (foldr (PBO PAnd) (PropConst True) (pres m))
+  !gScripts <- timeItNamed "Script Inference Time" $ generate $ makeGeneratorScripts numScripts (foldr (PBO PAnd) (PropConst True) (pres m))
   putStrLn ("Found " ++ (show $ length gScripts) ++ " generator scripts while searching for " ++ show numScripts)
-  print gScripts
   let !gs = map GenScript.interpScript gScripts
   let bandit = map val <$> ucb1 isJust gs
   putStrLn ("Generating " ++ show n ++ " inputs")
-  !cases <- Data.Maybe.catMaybes . take n <$> generate bandit
+  !cases <- timeItNamed "Generation Time" (Data.Maybe.catMaybes . take n <$> generate bandit)
   let numDiscarded = n - length cases
   putStrLn ("Discarded: " ++ show numDiscarded)
   putStrLn ("Unique: " ++ show (length $ nub cases))
