@@ -47,6 +47,11 @@ depUGraph (PMO _ p) = depUGraph p
 (https://stackoverflow.com/questions/8127932/how-to-convert-an-undirected-graph-to-a-dag)
 -}
 
+{-
+should really deterministically break into CCs,
+and then to random toposort on each CC: this decreases
+the possibilities by a factor of
+-}
 randTopo :: DepGraph -> Gen [Var]
 randTopo g = do
   vs <- shuffle (Map.keys g) {- this should work for doing CCs... -}
@@ -74,7 +79,7 @@ genConcrOrder p = let !g = depUGraph p in
 
 data ConstrTyp = EqZ | GeqZ | GtZ | NeqZ deriving (Eq,Ord)
 data Constraint = C ConstrTyp NumExp deriving (Eq,Ord)
-data GSAction = Concretize Var | Constrain Var Constraint deriving (Eq,Ord)
+data GSAction = Concretize Var | Constrain (Maybe Var) Constraint deriving (Eq,Ord)
                                {- Variable which is being constrained -}
 type GeneratorScript = [GSAction]
 
@@ -87,12 +92,13 @@ instance Show Constraint where
   show (C c e) = show e ++ show c
 instance Show GSAction where
   show (Concretize x) = "!" ++ x
-  show (Constrain v c) = "{" ++ v ++ "} " ++ show c
+  show (Constrain v c) = "{" ++ show v ++ "} " ++ show c
 
 varsMentioned :: GeneratorScript -> Set.Set Var
 varsMentioned [] = Set.empty
 varsMentioned (Concretize x:s) = Set.insert x (varsMentioned s)
-varsMentioned (Constrain x (C _ e) : s) = Set.insert x $ Set.union (Syntax.freeNumVar e) (varsMentioned s)
+varsMentioned (Constrain Nothing (C _ e) : s) = Set.union (Syntax.freeNumVar e) (varsMentioned s)
+varsMentioned (Constrain (Just x) (C _ e) : s) = Set.insert x $ Set.union (Syntax.freeNumVar e) (varsMentioned s)
 
 
 {-
@@ -148,12 +154,14 @@ filterMapFlip f (x:xs) = case f x of
 
 constructScript :: Set.Set Constraint -> [Var] -> GeneratorScript
 constructScript cs vs = let svcs = filterMapFlip singleVarConstr (Set.toList cs) in
-  map (uncurry Constrain) svcs ++ go (cs Set.\\ Set.fromList (map snd svcs)) vs []
+  let (cs_left,body) = go (cs Set.\\ Set.fromList (map snd svcs)) vs [] in
+  map (\(x,c) -> Constrain (Just x) c) svcs ++ body ++ (fmap (Constrain Nothing)) (Set.toList cs_left)
   where
-    go cs [] concrd = []
+    go cs [] concrd = (cs,[])
     go cs (v:vs) concrd =
       let v_constrs = Set.filter (concreteWRT concrd v) cs in
-      fmap (Constrain v) (Set.toList v_constrs) ++ Concretize v : go (cs Set.\\ v_constrs) vs (v:concrd)
+      let (cs_left,s') = go (cs Set.\\ v_constrs) vs (v:concrd) in
+      (cs_left, fmap (Constrain (Just v)) (Set.toList v_constrs) ++ Concretize v : s')
 
 
 {- Int parameter controls number of desired generators. We filter out
@@ -270,11 +278,14 @@ interpScript' st ((Concretize x):script) = do
       let cvs' = Map.insert x n cvs
       let st'' = st' {concrVars = cvs'}
       interpScript' st'' script
-interpScript' st ((Constrain x c):script) = do
+interpScript' st ((Constrain (Just x) c):script) = do
   let cMap = constrs st
   let cMap' = Map.update (Just . (c:)) x cMap
   let st' = st {constrs = cMap'}
   interpScript' st' script
+interpScript' st ((Constrain Nothing c):script) = do
+  {-FXME!!!-}
+  interpScript' st script
 
 initState :: [Var] -> ScriptState
 initState vars = S {concrVars = Map.empty, constrs= init}

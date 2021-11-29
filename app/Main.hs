@@ -45,7 +45,6 @@ conc1 = do
   x <- choose (0,y-1)
   return (x,y)
 
-
 conc2 :: Gen (Int,Int)
 conc2 = do
   x <- choose (0,10)

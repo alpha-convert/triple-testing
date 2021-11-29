@@ -3,13 +3,21 @@
 \usepackage{amsmath}
 \usepackage{amsfonts}
 \usepackage{amssymb}
+\usepackage{amsthm}
+\newtheorem{definition}{Definition}
 \usepackage{graphicx}
 \usepackage{fourier}
 \usepackage{hyperref}
+\usepackage{algorithm}
+\usepackage{algorithmicx}
+\usepackage{algpseudocode}% http://ctan.org/pkg/algorithmicx
+\DeclareMathOperator*{\argmax}{arg\,max}
+
+
 \usepackage[left=2cm,right=2cm,top=2cm,bottom=2cm]{geometry}
 
 \def\sectionautorefname{Section}
-
+\def\algorithmautorefname{Algorithm}
 
 \title{Learning Good Generators for Property-Based Testing in Deductive Program Verifiers}
 \author{Joseph Cutler}
@@ -24,9 +32,10 @@ In this report, we investigate the use of \textit{Property-Based Testing} in pla
 
 Further, PBT has significant usability benefits over SMT-based verification. A common complaint while using SMT-based verifiers is that it is often difficult to interpret the SMT output. When an SMT solver fails to verify a specification, it can be for one of two reasons: either (a) the specification is incorrect, or (b) the solver was simply unable to find a proof. These two results are often indistinguishable, as the solver may not return a counter-model indicating that the specification is falsifiable --- in this case, the only course of action is to attempt to provide more hints to the solver in the hopes that it will eventually prove the property. With PBT, the only failure mode is through counter-examples, and so no interpretation is required. Moreover, the counter-examples in a PBT approach are more easily interpretable. With SMT, counter-examples are encoded in an SMT data format and are not easily lifted back to program values. With testing, the inputs were concrete to begin with, and so counter-examples can be presented as-is. Finally, PBT can actually aid in the development of SMT-verified programs by allowing the user to test specifications to gain confidence that they are true before spending costly time attempting to develop tricky loop invariants.
 
-In this report, we develop a simple deductive program verifier based on Dafny which is backed by PBT instead of SMT. In \autoref{sec:pbt}, we show how PBT can be used in place of an SMT solver to do deductive verification. This process is conceptually simple, but we will see that it hides a major challenge: generating thousands of independent random input sets which satisfy a function's precondition is NP-hard. In fact, tackling a small variant of problem is the bulk of the content of this report, and its main technical contribution. In brief, we present an algorithm which first infers a set of ``candidate" example-generators from the precondition in question, and then uses a reinforcement-learning-based online learning algorithm to find the best generator among the set.
+In this report, we develop a simple deductive program verifier based on Dafny which is backed by PBT instead of SMT. In \autoref{sec:pbt}, we show how PBT can be used in place of an SMT solver to do deductive verification. This process is conceptually simple, but we will see that it hides a major challenge: generating thousands of independent random input sets which satisfy a function's precondition is NP-hard. In fact, tackling a small variant of problem is the bulk of the content of this report, and its main technical contribution. We give a sketch of this contribution in this section. In brief, our technique first infers a set of ``candidate" example-generators from the precondition in question, and then uses a reinforcement-learning-based online learning algorithm to find the best generator among the set.
 
-In \autoref{sec:luck}, we introduce a subset of a domain-specific language called \texttt{Luck} \cite{}, whose programs are generators. We discuss the semantics of these generators, and show why it is difficult to automatically read off a good generator from a precondition.
+\textbf{Fixme}
+In \autoref{sec:luck}, we introduce a subset of a domain-specific language called \texttt{Luck} \cite{}, whose programs are generators. We discuss the semantics of these generators, and ???
 
 In \autoref{sec:sci}, we present our algorithm for inferring candidate generators for a precondition. In \autoref{sec:bandits}, we discuss the online learning technique we employ to discover the best generator among our candidates. Finally, in \autoref{sec:impl}, we discuss our implementation of this algorithm, and present benchmarks.
 
@@ -34,7 +43,7 @@ In \autoref{sec:sci}, we present our algorithm for inferring candidate generator
 
 %At present, there is a great deal of active research into ways to lower the barrier to entry for using verifiers like Dafny. In this report, I present
 
-\section{PBT and the Generator Problem}
+\section{PBT, the Generator Problem, and our Approach}
 \label{sec:pbt}
 At the core of all deductive program verifiers is a decision procedure for Hoare triples $\{\phi\}\, C \, \{\psi\}$. Such a triple is valid when for all heaps $\sigma$ satisfying $\phi$, we have that $\psi$ holds of the heap which results after $C$ is run on $\sigma$. In symbols:
 
@@ -44,16 +53,149 @@ At the core of all deductive program verifiers is a decision procedure for Hoare
 
 With traditional SMT-based verifiers, this is decided by compting the weakest precondition of $\psi$ with respect to $C$, $\texttt{wp}(C,\psi)$ and using SMT to prove that $\phi$ implies it. With property-based random testing, we can skip the weakest precondition computation and directly test ($\ast$). PBT tests formulae like $\forall x. P(x)$ by randomly generating values $a$ (of a specified type), and then evaluating the concrete boolean expression $P(a)$. When the property $P$ is an implication $Q \implies R$, as is the case for ($\ast$), this is not very effective. Intuitively, we'd like to test that $R$ holds for a bunch of examples satisfying $Q$, but what actually ends up happening is that the vast majority of our random examples satisfy $Q \implies R$ simply because they don't satisfy $Q(x)$. To fix this, PBT relies on \textit{user-written} generators which generate values \textit{satisfying $Q$}, and then checking that $R$ holds.
 
-In terms of ($\ast$), this means that a user of a verifier backed by PBT would have to provide programs which generate random heaps $\sigma$ to satisfy the preconditions of every function they plan to test. This is extremely labor-intensive, error prone, and essentially erases the benefits of PBT over SMT-based verification. To make the former practical, we need to \textit{automatically} create generators from the ``source code" of a specification. Unfortunately, this problem is NP-Hard in even simple cases. If we limit ourselves to preconditions $\phi$ which consist only of arithmetic constraints (which we will in fact do), the problem of generating hundreds of sets of inputs which satisfy $\phi$ is as hard as generating \textit{one} set of inputs, which is equivalent to SMT solving.
+In terms of ($\ast$), this means that a user of a verifier backed by PBT would have to provide programs which generate random heaps $\sigma$ to satisfy the preconditions of every function they plan to test. This is labor-intensive, error prone, and diminishes the benefits of PBT over SMT-based verification. To make the former practical, we need to \textit{automatically} create generators from the ``source code" of a specification. Unfortunately, this problem is NP-Hard in even simple cases. If we limit ourselves to preconditions $\phi$ which consist only of arithmetic constraints (which we will in fact do), the problem of generating hundreds of sets of inputs which satisfy $\phi$ is as hard as generating \textit{one} set of inputs, which is equivalent to SMT solving.
 
-\section{Luck and Generator Scripts}
+In the rest of this report, we will focus in on this generation problem, and present a solution to a specific instance of it. The main cause of the generator problem described above is that propositions are \textit{declarative}: they simply state what must hold in order for them to be satisfied, and provide no instructions on how to generate values which satisfy them. In classical PBT, the user is required to write \textit{generators} which are programs that emit random values satisfying a property. Ideally, we would like to automatically translate declarative propositions into generators, but as stated earlier, this is arbitrarily hard. Instead, the core of our approach is a translation of propositions into a large set of \textit{potentially failing} generators. By relaxing the problem from inferring one \textit{perfect} generator to a few carefully-chosen generators of unknown (but hopefully high) quality, we make the problem tractable. Empirically, it seems that among a large enough set of these automatically-created generator candidates, there is often one which approximates a generator which a human would have written for the same proposition. With this in mind, we can then run an online learning algorithm to learn which among the candidates is the best, while simultaneously generating a sequence of random inputs for testing purposes.
+
+\section{Syntax of Propositions and \texttt{ALuck}}
 \label{sec:luck}
 
-\section{Script Candidate Inference}
+Before we discuss the generator learning algorithm, we must discuss the class of propositions for which we will be learning generators, as well as the class of generators to be learned.
+
+The syntax of preconditions that we plan to handle are shown in \autoref{fig:precond-syntax}. These conditions are conjunctions and negations of arithmetical equalities and inequalities with variables ranging over the function's arguments. The allowable expressions in these inequalities are essentially multi-linear functions, where each variable occurs with degree at most one. While this form is restrictive, we have found empirically that the numerical parts most preconditions of normal functions fall within this class. This class of preconditions does not represent the upper limit of what our technique can handle, and we believe that it can be extended to handle constraints with other numerical operators (division, mod). Moreover, there appears to be no inherent difficulty to extending the technique to handle constraints over structured types like lists: we present the algorithm as-is to simplify the discussion.
+
+\begin{figure}
+\caption{Syntax of Preconditions}
+\label{fig:precond-syntax}
+\end{figure}
+
+In order to make the generator inference/synthesis problem tractable, we fix the syntactic form of the generators we plan to consider. Our generators are written in a language called \texttt{ALuck} (for \textit{arithmetic} \texttt{Luck}) inspired by \texttt{Luck} \cite{}, a domain-specific language for writing generators which tries to mirror the declarative form of standard propositions. Generators written \texttt{ALuck} run by sequentially \textit{constraining} and \textit{concretizing} variables. Every variable in an \texttt{ALuck} generator begins as a symbolic variable. Constraints over these variables are then added. Variables can then be concretized, wherein they are replaced by a random value satisfying the constraints on that variable that have been accumulated thusfar. The final result of the generator is a map from variables to their (randomly) chosen values.
+
+More concretely, generators in \texttt{ALuck} are sequences of ``concretize" operations, written $!x$, and ``constrain" operations, written simply as the constraint to be added. The syntax of \texttt{ALuck} is shown in \autoref{fig:aluck-syntax}. These sequences are then evaluated from left to right while maintaining a pair of mappings: one from concretized variables to their values, and the other from yet-unconcretized variables to the set of constraints that have accumulated on them.
+When a ``constrain" operation $c$ is encountered, the constraint $c$ is added to the constraint sets of all of the variables it mentions. If a constraint mentions no variables, it is checked for valdity: if the constraint is not valid, the generator fails. When a ``concretize" operation $!x$ is encountered, a value is randomly sampled from the uniform distribution on the set of possible values\footnote{
+Because integers are bounded by machine word lengths, the ``uniform distribution" does make sense here, even for unconstrained variables.
+} denoted by the constraints on $x$. This semantics is shown in \autoref{fig:aluck-semantics}.
+
+Of course, the step of ``sampling from constraints specified by inequalities on variables" for concretization operations is exactly what we're trying to solve! To make this step tractable, we enforce that our \texttt{ALuck} programs be ``well-concretized": when a variable is concretized, all variables which occur in constraints with it must also already have been concretized. This requirement is strict, but it (a) makes it possible to run generators, and (b) simplifies the generator inference process by shrinking the class of generators under consideration.
+
+To give some intuition about how these generator scripts work, we consider running the example script $s = [0 \leq x, !x, x \leq y, !y]$, which is a generator 
+script for $P(x,y) = 0\leq x \leq y$. When we run $s$, the constraint $0 \leq x$ is added to $x$. Next, $x$ is concretized: a value $a$ is sampled from 
+$\mathcal{U}\left[0,2^{64}-1\right]$. Then, the constraint $a \leq y$ is added to $y$. Finally, a value $b$ is sampled from $\mathcal{U}\left[a,2^{64}-1\right]$, and the result $\{x \mapsto a, y \mapsto b\}$ is returned.
+
+It is crucial to note that generators can fail. For example, the generator $[!x,!z, x \leq y \leq z, !y]$ will fail if the generated $x$ and $z$ are such that $z < x$:  the sample domain for $y$ will be empty. Some generators like this one fail much all the time, and some such as the generator $s$ above never fail.
+
+%\begin{definition}[$p$-Goodness]
+%We say that a generator script $s$ is $p$-good if it succeeds with probability at least $p$.
+%\end{definition}
+
+\begin{figure}
+\caption{Generator Script Syntax}
+\label{fig:aluck-syntax}
+\end{figure}
+
+\begin{figure}
+\caption{Generation Semantics}
+\label{fig:aluck-semantics}
+\end{figure}
+
+\section{Generator Candidate Inference}
 \label{sec:sci}
+The first step in our algorithm is to infer a set of generators from a given predicate. We begin by noting that every ordering of the variables in a property immediately determines a well-concretized generator: this procedure is shown below in \autoref{alg:fixed-ordering}. In essence, the procedure works by placing all of the constraints that could possibly appear before a concretization immediately before it.
+
+\begin{algorithm}
+    \caption{Generator from an ordering}
+    \label{alg:fixed-ordering}
+    \begin{algorithmic}
+      \Function{constructGenerator}{$xs$,$P$}
+       \State $P_{const} \gets$ conjuncts in $P$ mentioning only one variable
+       \State $P \gets$ $P$ without $P_{const}$
+       \State $s \gets P_{const}$ 
+       \State $ys \gets []$ 
+       \For{$x \in xs$}
+         \State $P' \gets$ conjuncts in $P$ mentioning $x$ and variables in $ys$
+         \State $s \gets$ append($s$,append($c'$,$!x$))
+         \State $P \gets$ $P$ without $P'$
+         \State $ys \gets$ append($ys$,$x$)
+       \EndFor
+       \State $s \gets$ append($s$,$P$)
+       
+       \Return $s$
+      \EndFunction
+    \end{algorithmic}
+\end{algorithm}
+
+
+Because of this, to infer good generators for a property $P$, it suffices to generate good orderings of its variables. Unfortunately, for a property $P$ with $n$ free variables, there are $n!$ such orderings: a very large search space. Fortunately, we can prune this search space by only looking for ``relevant" orderings. To illustrate, consider the property $x \leq y \wedge u \leq v$. There are $24$ different variable orderings on $4$ variables, but there are really only four useful concretization orders: the two possible orders of $x$ and $y$, combined with the two possible orders of $u$ and $v$. Because there are no interactions between $x$ and $u$ or $y$ and $v$, the two orderings $x,u,y,v$ and $x,y,u,v$ will give the same generator. This quotienting allows us to shrink the space of orderings significantly.
+
+To operationalize this, we create an undirected graph from a proposition to encode the important inter-relationships that a concretization order should capture.
+
+\begin{definition}[Proposition Graph]
+For a proposition $P$, define $G(P)$ to be the graph whose nodes are variables, with an edge $(x,y)$ when $x$ and $y$ both occur in one of the conjuncts of $P$.
+\end{definition}
+
+Then, to generate a concretization ordering, we randomly depth-first search $G(P)$, and list variables in the order that they're visited in the graph. Pseudocode for this is shown in \autoref{alg:generate-ordering}.
+
+\begin{algorithm}
+    \caption{Generate a Random Concretization Ordering}
+    \label{alg:generate-ordering}
+    \begin{algorithmic}
+      \Function{randomConcr}{$P$}
+      \State $G \gets G(P)$ 
+      \State $X \gets \{\}$
+      \State $S \gets $ shuffle(V($G$))
+      \State $xs \gets []$
+      
+      \While{$S \neq []$}
+       \State $x \gets $ Pop($S$)
+       \If{$x \notin X$}
+         \State $X \gets X \cup \{x\}$
+         \State $xs \gets $ append($xs$,$[x]$)
+         \State $S \gets $ append(shuffle(N($x$)),$S$)
+       \EndIf
+
+      \EndWhile
+      
+      \Return $xs$
+      
+      \EndFunction
+    \end{algorithmic}
+\end{algorithm}
+
+Then, to generate our set of generator candidates, we repeatedly run this function. This may give repeated generators, and so we filter the result for uniqueness. It's worth noting that getting repeated results is good: it means that we have successfully pruned the search space sufficiently to get a small number of possible generators. The number of generators in our set requires a careful balance. Too few and the set may not contain a generator which succeeds often enough to rapidly generate our desired number of unique inputs. Too many and the learning algorithm will converge too slowly to the best generator in the set. Empirically, we have found that $n^2$ (where $n$ is the number of variables in $P$) is a good number of generators to take.
 
 \section{Generator Learning with Bandits Algorithms}
 \label{sec:bandits}
+With our bag of generators in hand, we now need to find the best one. The approach we take will be inspired by the Multi-Armed Bandits \cite{} problem \footnote{More precisely, Stochastic Bernoulli Bandits} from the theory of reinforcement learning. In short, the multi armed bandits problem describes a situation where an algorithm is repeatedly presented a fixed set of choices. Each choice gives a different (random) reward, and the goal of the game is to maximize the total reward by learning which choice or set of choices gives the best rewards. In our setting, the ``choices" are our generator candidates, and the rewards are given by success or failure of a generator to yield a value. Under this analogy, an algorithm for the Multi-Armed Bandits problem will let us learn which generators give the best results \textit{while simultaneously} generating a stream of valid inputs for the function.
+
+To make the discussion more concrete, the Multi-Armed Bandits problem is described as the following repeated game: at each round $t$, the player plays an action $a_t \in [K]$, and receives a reward $X_{{a_t},t}$, which is a $\{0,1\}$-valued random variable. The random variables $X_{i,t}$ are IID for fixed $i$, and independent for fixed $t$. We write the mean of the $i$th reward variable (for all $t$) $\mu_i$. The goal of the game is to maximize one's reward, and so the goal of a bandits learning algorithm is to learn an adaptive policy, which takes a history of play up until state $t$ (all actions $a_{t'}$ and received rewards $X_{a_{t'},t'}$ for $t' < t$), and produces a new action $a_t$. The metric by which we compare bandits algorthms is \textit{regret}: how much worse they do than the best policy in hindsight.
+
+\begin{definition}[Regret]
+Define $i_\star = \argmax_i \mu_i$, and write $\mu_\star = \mu_{i_\star}$. The regret $R(A)$ of an algorithm $A$ over $T$ rounds is defined as
+$$
+R(A) = T\mu_\star - \mathbb{E}\left[\sum_{t=1}^T X_{A(t),t}\right]
+$$
+\end{definition}
+
+The algorithm we will use is called UCB1 \cite{}. UCB1 achieves a regret bound of $O(\sqrt{KT\log K})$. While algorithms are know which achieve $O(\sqrt{KT})$ regret, UCB1 is simple to implement and understand, and performs more than well enough for our setting. Below, we present the UCB1 algorithm, modified for use in property-based testing.
+
+\begin{algorithm}
+    \caption{Learn a Generator}
+    \label{alg:ucb1}
+    \begin{algorithmic}
+      \Function{ucb1}{generators $g_1,\dots,g_K$, property $p$}
+      \State $x_i \gets $ sample($g_i$) for $i \in [K]$
+      \State $r_i \gets $ $1$ if $P(x_i)$, $0$ else 
+      \State $\hat{\mu}_i \gets r_i$
+      \State $n_i \gets 1$
+      \EndFunction
+    \end{algorithmic}
+\end{algorithm}
+
+
+
+$$
+\mathbb{E}\left[\frac{1}{T}\sum_{t=1}^T X_{A(t),t}\right] = \mu_\star - \frac{R(A)}{T} \geq \mu_\star - O\left(\sqrt{\frac{K\log K}{T}}\right)
+$$
 
 \section{Implementation and Results}
 \label{sec:impl}

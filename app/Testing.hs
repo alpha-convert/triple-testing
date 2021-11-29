@@ -32,6 +32,7 @@ satHoare n m = do
   let numScripts :: Int = numVars * numVars
   !gScripts <- generate $ makeGeneratorScripts numScripts (foldr (PBO PAnd) (PropConst True) (pres m))
   putStrLn ("Found " ++ (show $ length gScripts) ++ " generator scripts while searching for " ++ show numScripts)
+  print gScripts
   let !gs = map GenScript.interpScript gScripts
   let bandit = map val <$> ucb1 isJust gs
   putStrLn ("Generating " ++ show n ++ " inputs")
